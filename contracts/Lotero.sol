@@ -25,7 +25,9 @@ contract Lotero {
 
     Bet[] public bets;
 
-    uint8 public constant WIN_MULTIPLIER = 5;
+    uint8 public constant MIN_WIN_MULTIPLIER = 2;
+
+    uint8 public constant MAX_WIN_MULTIPLIER = 5;
 
     uint256 public activeBet;
 
@@ -99,21 +101,24 @@ contract Lotero {
     *@param betId the bet index
     */
     function getAvailableQuotaInBet(uint betId) public view returns(uint256) {
-        return (address(this).balance - (getMaxBetAmountInBet(betId)*WIN_MULTIPLIER))/WIN_MULTIPLIER;
+        return (address(this).balance - (getMaxBetAmountInBet(betId)*MIN_WIN_MULTIPLIER))/MIN_WIN_MULTIPLIER;
     }
 
     /**
     *@dev Close bet, pay to winners and increase the bet index.
     *
     */
-    function closeBet(ValidNumber winningNumber) public payable currentBetIsActive{
+    function closeBet(ValidNumber winningNumber) public payable currentBetIsActive isValidNumber(uint8(winningNumber)){
 
         address [] memory winners = bets[activeBet].playersByChoosenNumber[uint8(winningNumber)];
+
+        //Get de winning multiplier (from 2 to 5)
+        uint8 winningMultiplier = getWinnerMultiplier(winningNumber);
 
         //Pay to winners
         for(uint8 i = 0; i < winners.length; i++) { 
             address payable winner = payable(winners[i]);
-            winner.transfer(bets[activeBet].players[winner].amount * WIN_MULTIPLIER);
+            winner.transfer(bets[activeBet].players[winner].amount * winningMultiplier);
         }
 
         //Increase bet index
@@ -128,10 +133,64 @@ contract Lotero {
     }
 
     /**
+    *@dev Get current winner multipler for current bet
+    */
+    function getWinnerMultiplier(ValidNumber winningNumber) public view isValidNumber(uint8(winningNumber)) returns (uint8) {
+
+        uint8 currentMultiplier = MAX_WIN_MULTIPLIER;
+
+        while(currentMultiplier >= MIN_WIN_MULTIPLIER){
+            if (bets[activeBet].amountByChoosenNumber[uint8(winningNumber)] * currentMultiplier < address(this).balance){
+                break;
+            }else{
+                currentMultiplier--;
+            }
+        }
+
+        return currentMultiplier;
+    }
+
+    /**
+    *@dev Get current min win multipler for current bet
+    */
+    function getMinMultiplier() public view returns (uint8) {
+
+        uint8 currentMultiplier = MAX_WIN_MULTIPLIER;
+
+        while(currentMultiplier >= MIN_WIN_MULTIPLIER){
+            if (getMaxBetAmountInBet(activeBet) * currentMultiplier < address(this).balance){
+                break;
+            }else{
+                currentMultiplier--;
+            }
+        }
+
+        return currentMultiplier;
+    }
+
+    /**
+    *@dev Get current max win multipler for current bet
+    */
+    function getMaxMultiplier() public view returns (uint8) {
+
+        uint8 currentMultiplier = MAX_WIN_MULTIPLIER;
+
+        while(currentMultiplier >= MIN_WIN_MULTIPLIER){
+            if (getMinBetAmountInBet(activeBet) * currentMultiplier < address(this).balance){
+                break;
+            }else{
+                currentMultiplier--;
+            }
+        }
+
+        return currentMultiplier;
+    }
+
+    /**
     *@dev Get max amount bet on any number
     *@param betId the bet index
     */
-    function getMaxBetAmountInBet(uint betId) private view returns(uint256) {
+    function getMaxBetAmountInBet(uint betId) public view returns(uint256) {
         uint256 maxAmount = 0;
 
         //Loop from 0 to 9
@@ -142,6 +201,23 @@ contract Lotero {
         }
 
         return maxAmount;
+    }
+
+    /**
+    *@dev Get min amount bet on any number
+    *@param betId the bet index
+    */
+    function getMinBetAmountInBet(uint betId) public view returns(uint256) {
+        uint256 minAmount = bets[betId].amountByChoosenNumber[0];
+
+        //Loop from 0 to 9
+        for(uint8 i = 1; i < 10; i++) {  
+            if(bets[betId].amountByChoosenNumber[i] < minAmount) {
+                minAmount = bets[betId].amountByChoosenNumber[i];
+            }
+        }
+
+        return minAmount;
     }
 
     /**
@@ -169,7 +245,7 @@ contract Lotero {
     */
     modifier checkBetCouldBePayed(uint betId, uint256 amount) {
         uint256 possibleNewAmount = amount + getMaxBetAmountInBet(betId);
-        require(address(this).balance >= possibleNewAmount * WIN_MULTIPLIER, "Not enough money in balance to add this bet");
+        require(address(this).balance >= possibleNewAmount * MIN_WIN_MULTIPLIER, "Not enough money in balance to add this bet");
         _;
     }
 
